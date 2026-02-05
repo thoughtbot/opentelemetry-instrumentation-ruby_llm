@@ -47,3 +47,7 @@ This gem follows the [OpenTelemetry GenAI Semantic Conventions](https://opentele
 Copyright (c) Clarissa Borges and thoughtbot, inc.
 
 This gem is free software and may be redistributed under the terms specified in the [LICENSE](LICENSE) file.
+
+<!-- START /templates/footer.md -->
+
+<!-- END /templates/footer.md -->
