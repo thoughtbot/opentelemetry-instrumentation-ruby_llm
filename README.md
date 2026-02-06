@@ -37,6 +37,9 @@ end
 | Chat completions | Supported |
 | Tool calls | Supported |
 | Error handling | Supported |
+| Conversation tracking (`gen_ai.conversation.id`) | Planned |
+| Opt-in input/output content capture | Planned |
+| System instructions capture | Planned |
 | Embeddings | Planned |
 | Streaming | Planned |
 
