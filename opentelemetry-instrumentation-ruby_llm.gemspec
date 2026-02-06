@@ -5,6 +5,7 @@ Gem::Specification.new do |spec|
   spec.version       = OpenTelemetry::Instrumentation::RubyLLM::VERSION
   spec.authors       = ["Clarissa Borges"]
   spec.email         = ["cborges@thoughtbot.com"]
+  spec.license       = "MIT"
 
   spec.summary     = "OpenTelemetry instrumentation for RubyLLM"
   spec.description = "Adds OpenTelemetry tracing to RubyLLM chat operations"
