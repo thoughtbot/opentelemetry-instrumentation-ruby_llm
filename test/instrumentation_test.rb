@@ -67,6 +67,31 @@ class InstrumentationTest < Minitest::Test
     assert_equal OpenTelemetry::Trace::Status::ERROR, span.status.code
   end
 
+  def test_ask_still_works_when_instrumentation_fails
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: {
+          id: "chatcmpl-123",
+          object: "chat.completion",
+          model: "gpt-4o-mini",
+          choices: [{
+            index: 0,
+            message: { role: "assistant", content: "Hello!" },
+            finish_reason: "stop"
+          }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+        }.to_json
+      )
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    chat.define_singleton_method(:tracer) { raise StandardError, "instrumentation bug" }
+
+    response = chat.ask("Hi")
+    assert_equal "Hello!", response.content
+  end
+
   def test_creates_span_for_tool_call
     calculator = Class.new(RubyLLM::Tool) do
       def self.name = "calculator"
@@ -140,5 +165,67 @@ class InstrumentationTest < Minitest::Test
     assert_equal "4", tool_span.attributes["gen_ai.tool.call.result"]
     assert_equal "call_abc123", tool_span.attributes["gen_ai.tool.call.id"]
     assert_equal "function", tool_span.attributes["gen_ai.tool.type"]
+  end
+
+  def test_execute_tool_still_works_when_instrumentation_fails
+    calculator = Class.new(RubyLLM::Tool) do
+      def self.name = "calculator"
+      description "Performs math"
+      param :expression, type: "string", desc: "Math expression"
+
+      def execute(expression:)
+        eval(expression).to_s
+      end
+    end
+
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(
+        {
+          status: 200,
+          headers: { "Content-Type" => "application/json" },
+          body: {
+            id: "chatcmpl-123",
+            object: "chat.completion",
+            model: "gpt-4o-mini",
+            choices: [{
+              index: 0,
+              message: {
+                role: "assistant",
+                content: nil,
+                tool_calls: [{
+                  id: "call_abc123",
+                  type: "function",
+                  function: { name: "calculator", arguments: '{"expression":"2+2"}' }
+                }]
+              },
+              finish_reason: "tool_calls"
+            }],
+            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+          }.to_json
+        },
+        {
+          status: 200,
+          headers: { "Content-Type" => "application/json" },
+          body: {
+            id: "chatcmpl-456",
+            object: "chat.completion",
+            model: "gpt-4o-mini",
+            choices: [{
+              index: 0,
+              message: { role: "assistant", content: "The answer is 4" },
+              finish_reason: "stop"
+            }],
+            usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 }
+          }.to_json
+        }
+      )
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    chat.with_tool(calculator)
+
+    chat.define_singleton_method(:tracer) { raise StandardError, "instrumentation bug" }
+
+    response = chat.ask("What is 2+2?")
+    assert_equal "The answer is 4", response.content
   end
 end
