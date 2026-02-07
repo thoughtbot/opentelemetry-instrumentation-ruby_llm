@@ -30,6 +30,35 @@ OpenTelemetry::SDK.configure do |c|
 end
 ```
 
+## Configuration
+
+### Content capture
+
+By default, message content is **not captured**. To enable it:
+
+```ruby
+OpenTelemetry::SDK.configure do |c|
+  c.use 'OpenTelemetry::Instrumentation::RubyLLM', capture_content: true
+end
+```
+
+Or set the environment variable:
+
+```bash
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true
+```
+
+When enabled, the following attributes are added to chat spans:
+
+| Attribute | Description |
+|-----------|-------------|
+| `gen_ai.system_instructions` | System instructions provided via `with_instructions` |
+| `gen_ai.input.messages` | Input messages sent to the model |
+| `gen_ai.output.messages` | Final output messages from the model |
+
+> [!WARNING]
+> Captured content may include sensitive or personally identifiable information (PII). Use with caution in production environments.
+
 ## What's traced?
 
 | Feature | Status |
@@ -37,8 +66,8 @@ end
 | Chat completions | Supported |
 | Tool calls | Supported |
 | Error handling | Supported |
+| Opt-in input/output content capture | Supported |
 | Conversation tracking (`gen_ai.conversation.id`) | Planned |
-| Opt-in input/output content capture | Planned |
 | System instructions capture | Planned |
 | Custom attributes on traces and spans | Planned |
 | Embeddings | Planned |

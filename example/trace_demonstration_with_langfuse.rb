@@ -26,7 +26,7 @@ OpenTelemetry::SDK.configure do |c|
       )
     )
   )
-  c.use "OpenTelemetry::Instrumentation::RubyLLM"
+  c.use "OpenTelemetry::Instrumentation::RubyLLM", capture_content: true
 end
 
 RubyLLM.configure do |c|
@@ -35,6 +35,7 @@ RubyLLM.configure do |c|
 end
 
 chat = RubyLLM.chat
+chat.with_instructions("You are a helpful assistant that provides concise answers.")
 response = chat.ask("What is the meaning of life?")
 puts "\nResponse: #{response.content}"
 

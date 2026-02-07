@@ -7,6 +7,8 @@ module OpenTelemetry
         instrumentation_name "OpenTelemetry::Instrumentation::RubyLLM"
         instrumentation_version VERSION
 
+        option :capture_content, default: false, validate: :boolean
+
         present do
           defined?(::RubyLLM)
         end

@@ -26,7 +26,7 @@ OpenTelemetry::SDK.configure do |c|
       )
     )
   )
-  c.use "OpenTelemetry::Instrumentation::RubyLLM"
+  c.use "OpenTelemetry::Instrumentation::RubyLLM", capture_content: true
 end
 
 RubyLLM.configure do |c|
@@ -44,8 +44,11 @@ class Calculator < RubyLLM::Tool
 end
 
 chat = RubyLLM.chat
+chat.with_instructions("You are a helpful assistant that provides concise answers.")
 chat.with_tool(Calculator)
 response = chat.ask("Use the calculator tool to compute 123 * 456")
+puts "\nResponse: #{response.content}"
+response = chat.ask("Use the tool again to compute 789 + 1011")
 puts "\nResponse: #{response.content}"
 
 # This line is only necessary in short-lived scripts. In a long-running application, spans will be flushed automatically.
