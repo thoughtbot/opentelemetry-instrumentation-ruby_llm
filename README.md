@@ -40,6 +40,7 @@ end
 | Conversation tracking (`gen_ai.conversation.id`) | Planned |
 | Opt-in input/output content capture | Planned |
 | System instructions capture | Planned |
+| Custom attributes on traces and spans | Planned |
 | Embeddings | Planned |
 | Streaming | Planned |
 
