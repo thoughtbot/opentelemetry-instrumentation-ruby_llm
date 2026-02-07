@@ -228,4 +228,108 @@ class InstrumentationTest < Minitest::Test
     response = chat.ask("What is 2+2?")
     assert_equal "The answer is 4", response.content
   end
+
+  def test_does_not_capture_content_by_default
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: {
+          id: "chatcmpl-123",
+          object: "chat.completion",
+          model: "gpt-4o-mini",
+          choices: [{
+            index: 0,
+            message: { role: "assistant", content: "Hello, world!" },
+            finish_reason: "stop"
+          }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+        }.to_json
+      )
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    chat.with_instructions("You are helpful")
+    chat.ask("Hi")
+
+    span = EXPORTER.finished_spans.first
+    assert_nil span.attributes["gen_ai.system_instructions"]
+    assert_nil span.attributes["gen_ai.input.messages"]
+    assert_nil span.attributes["gen_ai.output.messages"]
+  end
+
+  def test_captures_content_when_enabled
+    OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = true
+
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: {
+          id: "chatcmpl-123",
+          object: "chat.completion",
+          model: "gpt-4o-mini",
+          choices: [{
+            index: 0,
+            message: { role: "assistant", content: "Hello, world!" },
+            finish_reason: "stop"
+          }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+        }.to_json
+      )
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    chat.with_instructions("You are helpful")
+    chat.ask("Hi")
+
+    span = EXPORTER.finished_spans.first
+
+    system_instructions = JSON.parse(span.attributes["gen_ai.system_instructions"])
+    assert_equal [{ "type" => "text", "content" => "You are helpful" }], system_instructions
+
+    input_messages = JSON.parse(span.attributes["gen_ai.input.messages"])
+    assert_equal 1, input_messages.length
+    assert_equal "user", input_messages[0]["role"]
+    assert_equal [{ "type" => "text", "content" => "Hi" }], input_messages[0]["parts"]
+
+    output_messages = JSON.parse(span.attributes["gen_ai.output.messages"])
+    assert_equal 1, output_messages.length
+    assert_equal "assistant", output_messages[0]["role"]
+    assert_equal [{ "type" => "text", "content" => "Hello, world!" }], output_messages[0]["parts"]
+  ensure
+    OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = false
+  end
+
+  def test_captures_content_when_enabled_via_env_var
+    ENV["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = "true"
+
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: {
+          id: "chatcmpl-123",
+          object: "chat.completion",
+          model: "gpt-4o-mini",
+          choices: [{
+            index: 0,
+            message: { role: "assistant", content: "Hello, world!" },
+            finish_reason: "stop"
+          }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+        }.to_json
+      )
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    chat.ask("Hi")
+
+    span = EXPORTER.finished_spans.first
+
+    input_messages = JSON.parse(span.attributes["gen_ai.input.messages"])
+    assert_equal "user", input_messages[0]["role"]
+
+    output_messages = JSON.parse(span.attributes["gen_ai.output.messages"])
+    assert_equal "assistant", output_messages[0]["role"]
+  ensure
+    ENV.delete("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT")
+  end
 end
