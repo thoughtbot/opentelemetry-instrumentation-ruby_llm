@@ -67,7 +67,7 @@ class InstrumentationTest < Minitest::Test
     assert_equal OpenTelemetry::Trace::Status::ERROR, span.status.code
   end
 
-  def test_ask_still_works_when_instrumentation_fails
+  def test_complete_still_works_when_instrumentation_fails
     stub_request(:post, "https://api.openai.com/v1/chat/completions")
       .to_return(
         status: 200,
@@ -90,6 +90,39 @@ class InstrumentationTest < Minitest::Test
 
     response = chat.ask("Hi")
     assert_equal "Hello!", response.content
+  end
+
+  def test_instruments_complete_called_directly
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: {
+          id: "chatcmpl-123",
+          object: "chat.completion",
+          model: "gpt-4o-mini",
+          choices: [{
+            index: 0,
+            message: { role: "assistant", content: "Hello, world!" },
+            finish_reason: "stop"
+          }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+        }.to_json
+      )
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    chat.add_message(role: :user, content: "Hi")
+    chat.complete
+
+    spans = EXPORTER.finished_spans
+    assert_equal 1, spans.length
+
+    span = spans.first
+    assert_equal "chat gpt-4o-mini", span.name
+    assert_equal "chat", span.attributes["gen_ai.operation.name"]
+    assert_equal "openai", span.attributes["gen_ai.provider.name"]
+    assert_equal 10, span.attributes["gen_ai.usage.input_tokens"]
+    assert_equal 5, span.attributes["gen_ai.usage.output_tokens"]
   end
 
   def test_creates_span_for_tool_call
@@ -155,7 +188,7 @@ class InstrumentationTest < Minitest::Test
     chat_spans = spans.select { |s| s.name.include?("chat ") }
 
     assert_equal 1, tool_spans.length
-    assert_equal 1, chat_spans.length
+    assert_equal 2, chat_spans.length
 
     tool_span = tool_spans.first
     assert_equal OpenTelemetry::Trace::SpanKind::INTERNAL, tool_span.kind
