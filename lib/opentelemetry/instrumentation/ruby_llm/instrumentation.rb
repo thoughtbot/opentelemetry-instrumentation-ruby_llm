@@ -15,7 +15,9 @@ module OpenTelemetry
 
         install do |_config|
           require_relative "patches/chat"
+          require_relative "patches/embedding"
           ::RubyLLM::Chat.prepend(Patches::Chat)
+          ::RubyLLM::Embedding.singleton_class.prepend(Patches::Embedding)
         end
       end
     end

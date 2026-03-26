@@ -332,6 +332,78 @@ class InstrumentationTest < Minitest::Test
     OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = false
   end
 
+  def test_creates_span_for_embedding
+    stub_request(:post, "https://api.openai.com/v1/embeddings")
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: {
+          object: "list",
+          model: "text-embedding-3-small",
+          data: [
+            { object: "embedding", index: 0, embedding: [0.1, 0.2, 0.3] }
+          ],
+          usage: { prompt_tokens: 8, total_tokens: 8 }
+        }.to_json
+      )
+
+    RubyLLM.embed("Hello, world!", model: "text-embedding-3-small")
+
+    spans = EXPORTER.finished_spans
+    assert_equal 1, spans.length
+
+    span = spans.first
+    assert_equal OpenTelemetry::Trace::SpanKind::CLIENT, span.kind
+    assert_equal "embeddings text-embedding-3-small", span.name
+    assert_equal "embeddings", span.attributes["gen_ai.operation.name"]
+    assert_equal "openai", span.attributes["gen_ai.provider.name"]
+    assert_equal "text-embedding-3-small", span.attributes["gen_ai.request.model"]
+    assert_equal "text-embedding-3-small", span.attributes["gen_ai.response.model"]
+    assert_equal 8, span.attributes["gen_ai.usage.input_tokens"]
+    assert_equal 3, span.attributes["gen_ai.embeddings.dimension.count"]
+  end
+
+  def test_records_error_on_embedding_api_failure
+    stub_request(:post, "https://api.openai.com/v1/embeddings")
+      .to_return(status: 500, body: "Internal Server Error")
+
+    assert_raises do
+      RubyLLM.embed("Hello", model: "text-embedding-3-small")
+    end
+
+    spans = EXPORTER.finished_spans
+    span = spans.last
+
+    assert_equal "embeddings text-embedding-3-small", span.name
+    assert span.attributes["error.type"]
+    assert_equal OpenTelemetry::Trace::Status::ERROR, span.status.code
+  end
+
+  def test_embed_still_works_when_instrumentation_fails
+    stub_request(:post, "https://api.openai.com/v1/embeddings")
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: {
+          object: "list",
+          model: "text-embedding-3-small",
+          data: [
+            { object: "embedding", index: 0, embedding: [0.1, 0.2, 0.3] }
+          ],
+          usage: { prompt_tokens: 8, total_tokens: 8 }
+        }.to_json
+      )
+
+    mod = OpenTelemetry::Instrumentation::RubyLLM::Patches::Embedding
+    original_tracer = mod.instance_method(:tracer)
+    mod.define_method(:tracer) { raise StandardError, "instrumentation bug" }
+
+    result = RubyLLM.embed("Hello, world!", model: "text-embedding-3-small")
+    assert_equal [0.1, 0.2, 0.3], result.vectors
+  ensure
+    mod.define_method(:tracer, original_tracer)
+  end
+
   def test_captures_content_when_enabled_via_env_var
     ENV["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = "true"
 
