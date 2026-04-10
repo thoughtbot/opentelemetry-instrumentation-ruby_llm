@@ -5,6 +5,11 @@ module OpenTelemetry
     module RubyLLM
       module Patches
         module Chat
+          def with_otel_attributes(attributes)
+            @otel_attributes = attributes
+            self
+          end
+
           def complete(&)
             provider = @model&.provider || "unknown"
             model_id = @model&.id || "unknown"
@@ -44,6 +49,8 @@ module OpenTelemetry
                   span.set_attribute("gen_ai.output.messages", format_messages([response]))
                 end
               end
+
+              @otel_attributes&.each { |key, value| span.set_attribute(key, value.respond_to?(:call) ? value.call : value) }
 
               result
             end

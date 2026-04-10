@@ -36,6 +36,10 @@ end
 
 chat = RubyLLM.chat
 chat.with_instructions("You are a helpful assistant that provides concise answers.")
+chat.with_otel_attributes(
+  "langfuse.observation.prompt.name" => "helpful-assistant",
+  "langfuse.observation.prompt.version" => 1
+)
 response = chat.ask("What is the meaning of life?")
 puts "\nResponse: #{response.content}"
 
