@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
   spec.description = "Adds OpenTelemetry tracing to RubyLLM chat operations"
   spec.homepage    = "https://github.com/thoughtbot/opentelemetry-instrumentation-ruby_llm"
 
-  spec.required_ruby_version = ">= 3.2.0"
+  spec.required_ruby_version = ">= 3.1.3"
 
   spec.metadata["homepage_uri"] = spec.homepage
 
