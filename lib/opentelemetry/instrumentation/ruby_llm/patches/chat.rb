@@ -5,7 +5,7 @@ module OpenTelemetry
     module RubyLLM
       module Patches
         module Chat
-          def ask(message = nil, with: nil, &)
+          def complete(&)
             provider = @model&.provider || "unknown"
             model_id = @model&.id || "unknown"
 
