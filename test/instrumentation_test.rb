@@ -67,31 +67,6 @@ class InstrumentationTest < Minitest::Test
     assert_equal OpenTelemetry::Trace::Status::ERROR, span.status.code
   end
 
-  def test_complete_still_works_when_instrumentation_fails
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-123",
-          object: "chat.completion",
-          model: "gpt-4o-mini",
-          choices: [{
-            index: 0,
-            message: { role: "assistant", content: "Hello!" },
-            finish_reason: "stop"
-          }],
-          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-        }.to_json
-      )
-
-    chat = RubyLLM.chat(model: "gpt-4o-mini")
-    chat.define_singleton_method(:tracer) { raise StandardError, "instrumentation bug" }
-
-    response = chat.ask("Hi")
-    assert_equal "Hello!", response.content
-  end
-
   def test_instruments_complete_called_directly
     stub_request(:post, "https://api.openai.com/v1/chat/completions")
       .to_return(
@@ -198,68 +173,6 @@ class InstrumentationTest < Minitest::Test
     assert_equal "4", tool_span.attributes["gen_ai.tool.call.result"]
     assert_equal "call_abc123", tool_span.attributes["gen_ai.tool.call.id"]
     assert_equal "function", tool_span.attributes["gen_ai.tool.type"]
-  end
-
-  def test_execute_tool_still_works_when_instrumentation_fails
-    calculator = Class.new(RubyLLM::Tool) do
-      def self.name = "calculator"
-      description "Performs math"
-      param :expression, type: "string", desc: "Math expression"
-
-      def execute(expression:)
-        eval(expression).to_s
-      end
-    end
-
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        {
-          status: 200,
-          headers: { "Content-Type" => "application/json" },
-          body: {
-            id: "chatcmpl-123",
-            object: "chat.completion",
-            model: "gpt-4o-mini",
-            choices: [{
-              index: 0,
-              message: {
-                role: "assistant",
-                content: nil,
-                tool_calls: [{
-                  id: "call_abc123",
-                  type: "function",
-                  function: { name: "calculator", arguments: '{"expression":"2+2"}' }
-                }]
-              },
-              finish_reason: "tool_calls"
-            }],
-            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-          }.to_json
-        },
-        {
-          status: 200,
-          headers: { "Content-Type" => "application/json" },
-          body: {
-            id: "chatcmpl-456",
-            object: "chat.completion",
-            model: "gpt-4o-mini",
-            choices: [{
-              index: 0,
-              message: { role: "assistant", content: "The answer is 4" },
-              finish_reason: "stop"
-            }],
-            usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 }
-          }.to_json
-        }
-      )
-
-    chat = RubyLLM.chat(model: "gpt-4o-mini")
-    chat.with_tool(calculator)
-
-    chat.define_singleton_method(:tracer) { raise StandardError, "instrumentation bug" }
-
-    response = chat.ask("What is 2+2?")
-    assert_equal "The answer is 4", response.content
   end
 
   def test_does_not_capture_content_by_default
@@ -377,31 +290,6 @@ class InstrumentationTest < Minitest::Test
     assert_equal "embeddings text-embedding-3-small", span.name
     assert span.attributes["error.type"]
     assert_equal OpenTelemetry::Trace::Status::ERROR, span.status.code
-  end
-
-  def test_embed_still_works_when_instrumentation_fails
-    stub_request(:post, "https://api.openai.com/v1/embeddings")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          object: "list",
-          model: "text-embedding-3-small",
-          data: [
-            { object: "embedding", index: 0, embedding: [0.1, 0.2, 0.3] }
-          ],
-          usage: { prompt_tokens: 8, total_tokens: 8 }
-        }.to_json
-      )
-
-    mod = OpenTelemetry::Instrumentation::RubyLLM::Patches::Embedding
-    original_tracer = mod.instance_method(:tracer)
-    mod.define_method(:tracer) { raise StandardError, "instrumentation bug" }
-
-    result = RubyLLM.embed("Hello, world!", model: "text-embedding-3-small")
-    assert_equal [0.1, 0.2, 0.3], result.vectors
-  ensure
-    mod.define_method(:tracer, original_tracer)
   end
 
   def test_captures_content_when_enabled_via_env_var

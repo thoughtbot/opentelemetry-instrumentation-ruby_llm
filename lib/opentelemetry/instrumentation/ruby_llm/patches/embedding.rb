@@ -41,9 +41,6 @@ module OpenTelemetry
 
               result
             end
-          rescue StandardError => e
-            OpenTelemetry.handle_error(exception: e)
-            super
           end
 
           private
