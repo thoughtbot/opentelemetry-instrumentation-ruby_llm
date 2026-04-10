@@ -47,9 +47,6 @@ module OpenTelemetry
 
               result
             end
-          rescue StandardError => e
-            OpenTelemetry.handle_error(exception: e)
-            super
           end
 
           def execute_tool(tool_call)
@@ -66,9 +63,6 @@ module OpenTelemetry
               span.set_attribute("gen_ai.tool.call.result", result_str[0..500])
               result
             end
-          rescue StandardError => e
-            OpenTelemetry.handle_error(exception: e)
-            super
           end
 
           private
