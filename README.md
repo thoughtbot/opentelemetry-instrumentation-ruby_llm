@@ -59,6 +59,32 @@ When enabled, the following attributes are added to chat spans:
 > [!WARNING]
 > Captured content may include sensitive or personally identifiable information (PII). Use with caution in production environments.
 
+### Custom attributes
+
+Use `with_otel_attributes` to add arbitrary attributes to the span for each request. This is useful for adding per-request metadata like Langfuse prompt linking or trace-level tags:
+
+```ruby
+chat = RubyLLM.chat
+chat.with_otel_attributes(
+  "langfuse.observation.prompt.name" => "supplement-assistant",
+  "langfuse.observation.prompt.version" => 1,
+  "langfuse.trace.tags" => ["vitamins"],
+  "langfuse.trace.metadata" => { category: "health" }.to_json
+)
+chat.ask("What are the side effects of Vitamin D3?")
+```
+
+Values can also be callables (Procs/lambdas) that are evaluated after each completion, giving access to response data:
+
+```ruby
+chat.with_otel_attributes(
+  "langfuse.observation.prompt.name" => "supplement-assistant",
+  "langfuse.observation.output" => -> { chat.messages.last&.content.to_s }
+)
+```
+
+Attributes persist across calls on the same chat instance and the method returns `self` for chaining.
+
 ## What's traced?
 
 | Feature | Status |
@@ -68,8 +94,8 @@ When enabled, the following attributes are added to chat spans:
 | Error handling | Supported |
 | Opt-in input/output content capture | Supported |
 | Conversation tracking (`gen_ai.conversation.id`) | Planned |
-| System instructions capture | Planned |
-| Custom attributes on traces and spans | Planned |
+| System instructions capture | Supported (via `capture_content`) |
+| Custom attributes on traces and spans | Supported (via `with_otel_attributes`) |
 | Embeddings | Planned |
 | Streaming | Planned |
 

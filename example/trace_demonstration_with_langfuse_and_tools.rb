@@ -46,6 +46,10 @@ end
 chat = RubyLLM.chat
 chat.with_instructions("You are a helpful assistant that provides concise answers.")
 chat.with_tool(Calculator)
+chat.with_otel_attributes(
+  "langfuse.observation.prompt.name" => "helpful-assistant",
+  "langfuse.observation.prompt.version" => 1
+)
 response = chat.ask("Use the calculator tool to compute 123 * 456")
 puts "\nResponse: #{response.content}"
 response = chat.ask("Use the tool again to compute 789 + 1011")

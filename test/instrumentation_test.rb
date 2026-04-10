@@ -292,6 +292,114 @@ class InstrumentationTest < Minitest::Test
     assert_equal OpenTelemetry::Trace::Status::ERROR, span.status.code
   end
 
+  def test_with_otel_attributes_sets_span_attributes
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: {
+          id: "chatcmpl-123",
+          object: "chat.completion",
+          model: "gpt-4o-mini",
+          choices: [{
+            index: 0,
+            message: { role: "assistant", content: "Hello!" },
+            finish_reason: "stop"
+          }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+        }.to_json
+      )
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    chat.with_otel_attributes(
+      "langfuse.trace.tags" => ["vitamin_d3"],
+      "custom.category" => "supplements"
+    )
+    chat.ask("Hi")
+
+    span = EXPORTER.finished_spans.first
+    assert_equal ["vitamin_d3"], span.attributes["langfuse.trace.tags"]
+    assert_equal "supplements", span.attributes["custom.category"]
+  end
+
+  def test_with_otel_attributes_returns_self_for_chaining
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: {
+          id: "chatcmpl-123",
+          object: "chat.completion",
+          model: "gpt-4o-mini",
+          choices: [{
+            index: 0,
+            message: { role: "assistant", content: "Hello!" },
+            finish_reason: "stop"
+          }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+        }.to_json
+      )
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    result = chat.with_otel_attributes("custom.category" => "test")
+
+    assert_same chat, result
+  end
+
+  def test_with_otel_attributes_evaluates_callables
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: {
+          id: "chatcmpl-123",
+          object: "chat.completion",
+          model: "gpt-4o-mini",
+          choices: [{
+            index: 0,
+            message: { role: "assistant", content: "Hello!" },
+            finish_reason: "stop"
+          }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+        }.to_json
+      )
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    chat.with_otel_attributes(
+      "custom.last_role" => -> { chat.messages.last&.role.to_s },
+      "custom.static" => "fixed"
+    )
+    chat.ask("Hi")
+
+    span = EXPORTER.finished_spans.first
+    assert_equal "assistant", span.attributes["custom.last_role"]
+    assert_equal "fixed", span.attributes["custom.static"]
+  end
+
+  def test_works_without_otel_attributes
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: {
+          id: "chatcmpl-123",
+          object: "chat.completion",
+          model: "gpt-4o-mini",
+          choices: [{
+            index: 0,
+            message: { role: "assistant", content: "Hello!" },
+            finish_reason: "stop"
+          }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+        }.to_json
+      )
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    response = chat.ask("Hi")
+
+    assert_equal "Hello!", response.content
+  end
+
   def test_captures_content_when_enabled_via_env_var
     ENV["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = "true"
 
