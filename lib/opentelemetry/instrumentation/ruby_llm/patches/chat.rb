@@ -58,6 +58,7 @@ module OpenTelemetry
 
           def execute_tool(tool_call)
             attributes = {
+              "gen_ai.operation.name" => "execute_tool",
               "gen_ai.tool.name" => tool_call.name,
               "gen_ai.tool.call.id" => tool_call.id,
               "gen_ai.tool.call.arguments" => tool_call.arguments.to_json,

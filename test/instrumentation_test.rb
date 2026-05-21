@@ -168,6 +168,7 @@ class InstrumentationTest < Minitest::Test
     tool_span = tool_spans.first
     assert_equal OpenTelemetry::Trace::SpanKind::INTERNAL, tool_span.kind
     assert_equal "execute_tool calculator", tool_span.name
+    assert_equal "execute_tool", tool_span.attributes["gen_ai.operation.name"]
     assert_equal "calculator", tool_span.attributes["gen_ai.tool.name"]
     assert_equal '{"expression":"2+2"}', tool_span.attributes["gen_ai.tool.call.arguments"]
     assert_equal "4", tool_span.attributes["gen_ai.tool.call.result"]
