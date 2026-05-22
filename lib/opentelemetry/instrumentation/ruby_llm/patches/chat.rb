@@ -19,6 +19,9 @@ module OpenTelemetry
               "gen_ai.provider.name" => provider,
               "gen_ai.request.model" => model_id,
             }
+            # Per GenAI semconv: set `gen_ai.request.stream` if and only if
+            # the request is streaming. Absence means non-streaming.
+            attributes["gen_ai.request.stream"] = true if block_given?
 
             tracer.in_span("chat #{model_id}", attributes: attributes, kind: OpenTelemetry::Trace::SpanKind::CLIENT) do |span|
               begin
@@ -36,6 +39,16 @@ module OpenTelemetry
                 span.set_attribute("gen_ai.usage.input_tokens", response.input_tokens) if response.input_tokens
                 span.set_attribute("gen_ai.usage.output_tokens", response.output_tokens) if response.output_tokens
                 span.set_attribute("gen_ai.request.temperature", @temperature) if @temperature
+
+                # Prompt-cache token accessors were added in ruby_llm 1.9.0 (commit 869a755f).
+                if response.respond_to?(:cached_tokens) && response.cached_tokens
+                  span.set_attribute("gen_ai.usage.cache_read.input_tokens", response.cached_tokens)
+                end
+
+                # Prompt-cache token accessors were added in ruby_llm 1.9.0 (commit 869a755f).
+                if response.respond_to?(:cache_creation_tokens) && response.cache_creation_tokens
+                  span.set_attribute("gen_ai.usage.cache_creation.input_tokens", response.cache_creation_tokens)
+                end
 
                 if capture_content?
                   system_messages = @messages.select { |m| m.role == :system }
@@ -62,13 +75,24 @@ module OpenTelemetry
               "gen_ai.tool.name" => tool_call.name,
               "gen_ai.tool.call.id" => tool_call.id,
               "gen_ai.tool.call.arguments" => tool_call.arguments.to_json,
-              "gen_ai.tool.type" => "function"
-            }
+              "gen_ai.tool.type" => "function",
+              "gen_ai.tool.description" => tools[tool_call.name.to_sym]&.description
+            }.compact
 
             tracer.in_span("execute_tool #{tool_call.name}", attributes: attributes, kind: OpenTelemetry::Trace::SpanKind::INTERNAL) do |span|
-              result = super
-              result_str = result.is_a?(::RubyLLM::Tool::Halt) ? result.content.to_s : result.to_s
-              span.set_attribute("gen_ai.tool.call.result", result_str[0..500])
+              begin
+                result = super
+              rescue => e
+                span.record_exception(e)
+                span.status = OpenTelemetry::Trace::Status.error(e.message)
+                span.set_attribute("error.type", e.class.name)
+                raise
+              end
+
+              # `RubyLLM::Tool::Halt#to_s` returns `@content.to_s`, so a single
+              # `to_s` covers both the Halt and plain-result cases.
+              span.set_attribute("gen_ai.tool.call.result", result.to_s[0..500])
+
               result
             end
           end

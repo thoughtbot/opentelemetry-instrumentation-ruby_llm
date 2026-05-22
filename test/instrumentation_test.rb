@@ -45,8 +45,59 @@ class InstrumentationTest < Minitest::Test
     assert_equal "openai", span.attributes["gen_ai.provider.name"]
     assert_equal "gpt-4o-mini", span.attributes["gen_ai.request.model"]
     assert_equal "chat", span.attributes["gen_ai.operation.name"]
+    # Per GenAI semconv, `gen_ai.request.stream` is set only when streaming.
+    assert_nil span.attributes["gen_ai.request.stream"]
     assert_equal 10, span.attributes["gen_ai.usage.input_tokens"]
     assert_equal 5, span.attributes["gen_ai.usage.output_tokens"]
+  end
+
+  def test_marks_streaming_chat_requests
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: {
+          id: "chatcmpl-123",
+          model: "gpt-4o-mini",
+          choices: [{ index: 0, message: { role: "assistant", content: "Hi" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+        }.to_json
+      )
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    chat.ask("Hi") { |_chunk| }
+
+    span = EXPORTER.finished_spans.first
+    assert_equal true, span.attributes["gen_ai.request.stream"]
+  end
+
+  def test_records_prompt_cache_tokens
+    # RubyLLM's OpenAI provider maps `cached_tokens` ← `cache_read_tokens(usage)`
+    # and `cache_creation_tokens` ← `cache_write_tokens(usage)`, both surfaced
+    # on `Message#cached_tokens` / `Message#cache_creation_tokens`.
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: {
+          id: "chatcmpl-cache",
+          model: "gpt-4o-mini",
+          choices: [{ index: 0, message: { role: "assistant", content: "Hello!" }, finish_reason: "stop" }],
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 5,
+            total_tokens: 105,
+            prompt_tokens_details: { cached_tokens: 75, cache_write_tokens: 20 }
+          }
+        }.to_json
+      )
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    chat.ask("Hi")
+
+    span = EXPORTER.finished_spans.first
+    assert_equal 75, span.attributes["gen_ai.usage.cache_read.input_tokens"]
+    assert_equal 20, span.attributes["gen_ai.usage.cache_creation.input_tokens"]
   end
 
   def test_records_error_on_api_failure
@@ -170,10 +221,53 @@ class InstrumentationTest < Minitest::Test
     assert_equal "execute_tool calculator", tool_span.name
     assert_equal "execute_tool", tool_span.attributes["gen_ai.operation.name"]
     assert_equal "calculator", tool_span.attributes["gen_ai.tool.name"]
+    assert_equal "Performs math", tool_span.attributes["gen_ai.tool.description"]
     assert_equal '{"expression":"2+2"}', tool_span.attributes["gen_ai.tool.call.arguments"]
     assert_equal "4", tool_span.attributes["gen_ai.tool.call.result"]
     assert_equal "call_abc123", tool_span.attributes["gen_ai.tool.call.id"]
     assert_equal "function", tool_span.attributes["gen_ai.tool.type"]
+  end
+
+  def test_records_error_when_tool_raises
+    boom = Class.new(RubyLLM::Tool) do
+      def self.name = "boom"
+      description "Always raises"
+
+      def execute
+        raise ArgumentError, "tool failure"
+      end
+    end
+
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: {
+          id: "chatcmpl-boom",
+          model: "gpt-4o-mini",
+          choices: [{
+            index: 0,
+            message: {
+              role: "assistant",
+              content: nil,
+              tool_calls: [{
+                id: "call_x",
+                type: "function",
+                function: { name: "boom", arguments: "{}" }
+              }]
+            },
+            finish_reason: "tool_calls"
+          }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+        }.to_json
+      )
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini").with_tool(boom)
+    assert_raises(ArgumentError) { chat.ask("trigger") }
+
+    tool_span = EXPORTER.finished_spans.find { |s| s.name.start_with?("execute_tool ") }
+    assert_equal "ArgumentError", tool_span.attributes["error.type"]
+    assert_equal OpenTelemetry::Trace::Status::ERROR, tool_span.status.code
   end
 
   def test_does_not_capture_content_by_default
