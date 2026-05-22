@@ -9,14 +9,21 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    name: Ruby ${{ matrix.ruby }}
+    name: Ruby ${{ matrix.ruby }} / ${{ matrix.gemfile }}
     strategy:
+      fail-fast: false
       matrix:
         ruby:
           - '3.4'
           - '3.3'
           - '3.2'
           - '3.1'
+        gemfile:
+          - gemfiles/ruby_llm_1.8.0.gemfile
+          - gemfiles/ruby_llm_1_latest.gemfile
+
+    env:
+      BUNDLE_GEMFILE: ${{ github.workspace }}/${{ matrix.gemfile }}
 
     steps:
       - uses: actions/checkout@v4

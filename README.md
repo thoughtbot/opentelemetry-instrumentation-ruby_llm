@@ -101,6 +101,15 @@ Attributes persist across calls on the same chat instance and the method returns
 
 This gem follows the [OpenTelemetry GenAI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/).
 
+## Compatibility
+
+This gem is tested against the following `ruby_llm` versions:
+
+- `1.8.0` (minimum supported)
+- `~> 1.8` (latest 1.x release)
+
+The Ruby matrix covers Ruby 3.1, 3.2, 3.3, and 3.4.
+
 ## License
 
 Copyright (c) Clarissa Borges and thoughtbot, inc.
