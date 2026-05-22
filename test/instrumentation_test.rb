@@ -9,6 +9,27 @@ class InstrumentationTest < Minitest::Test
     end
   end
 
+  def test_compatible_is_true_for_current_ruby_llm_version
+    instrumentation = OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance
+    assert_equal true, instrumentation.compatible?
+  end
+
+  def test_compatible_is_false_when_ruby_llm_below_minimum
+    original_version = ::RubyLLM::VERSION
+    ::RubyLLM.send(:remove_const, :VERSION)
+    ::RubyLLM.const_set(:VERSION, "1.7.99")
+
+    instrumentation = OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance
+    assert_equal false, instrumentation.compatible?
+  ensure
+    ::RubyLLM.send(:remove_const, :VERSION)
+    ::RubyLLM.const_set(:VERSION, original_version)
+  end
+
+  def test_minimum_ruby_llm_version_is_pinned_at_1_8_0
+    assert_equal "1.8.0", OpenTelemetry::Instrumentation::RubyLLM::Instrumentation::MINIMUM_RUBY_LLM_VERSION
+  end
+
   def test_creates_span_with_attributes
     stub_request(:post, "https://api.openai.com/v1/chat/completions")
       .to_return(
