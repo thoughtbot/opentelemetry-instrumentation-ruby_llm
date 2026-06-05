@@ -6,6 +6,7 @@ class InstrumentationTest < Minitest::Test
 
     RubyLLM.configure do |c|
       c.openai_api_key = "fake-key-for-testing"
+      c.anthropic_api_key = "fake-key-for-testing"
     end
   end
 
@@ -92,10 +93,12 @@ class InstrumentationTest < Minitest::Test
     assert_equal true, span.attributes["gen_ai.request.stream"]
   end
 
-  def test_records_prompt_cache_tokens
-    # RubyLLM's OpenAI provider maps `cached_tokens` ← `cache_read_tokens(usage)`
-    # and `cache_creation_tokens` ← `cache_write_tokens(usage)`, both surfaced
-    # on `Message#cached_tokens` / `Message#cache_creation_tokens`.
+  def test_records_openai_prompt_cache_read_tokens
+    # OpenAI exposes only `cached_tokens` via `prompt_tokens_details.cached_tokens`.
+    # Its provider in ruby_llm does not surface a `cache_creation_tokens` value
+    # until 1.15.0 (we only assert the cache-read attribute here).
+    # The accessor itself was added in ruby_llm 1.9.0.
+    skip "cached_tokens accessor not available before ruby_llm 1.9.0" unless RubyLLM::Message.instance_methods.include?(:cached_tokens)
     stub_request(:post, "https://api.openai.com/v1/chat/completions")
       .to_return(
         status: 200,
@@ -108,12 +111,45 @@ class InstrumentationTest < Minitest::Test
             prompt_tokens: 100,
             completion_tokens: 5,
             total_tokens: 105,
-            prompt_tokens_details: { cached_tokens: 75, cache_write_tokens: 20 }
+            prompt_tokens_details: { cached_tokens: 75 }
           }
         }.to_json
       )
 
     chat = RubyLLM.chat(model: "gpt-4o-mini")
+    chat.ask("Hi")
+
+    span = EXPORTER.finished_spans.first
+    assert_equal 75, span.attributes["gen_ai.usage.cache_read.input_tokens"]
+    assert_equal 0, span.attributes["gen_ai.usage.cache_creation.input_tokens"]
+  end
+
+  def test_records_anthropic_prompt_cache_tokens
+    # Anthropic's provider surfaces both `cached_tokens` (via
+    # `cache_read_input_tokens`) and `cache_creation_tokens` (via
+    # `cache_creation_input_tokens`). Accessors were added in ruby_llm 1.9.0.
+    skip "cache token accessors not available before ruby_llm 1.9.0" unless RubyLLM::Message.instance_methods.include?(:cache_creation_tokens)
+    stub_request(:post, "https://api.anthropic.com/v1/messages")
+      .to_return(
+        status: 200,
+        headers: { "Content-Type" => "application/json" },
+        body: {
+          id: "msg_cache",
+          type: "message",
+          role: "assistant",
+          model: "claude-3-5-sonnet-20241022",
+          content: [{ type: "text", text: "Hello!" }],
+          stop_reason: "end_turn",
+          usage: {
+            input_tokens: 100,
+            output_tokens: 5,
+            cache_read_input_tokens: 75,
+            cache_creation_input_tokens: 20
+          }
+        }.to_json
+      )
+
+    chat = RubyLLM.chat(model: "claude-3-5-sonnet-20241022")
     chat.ask("Hi")
 
     span = EXPORTER.finished_spans.first
