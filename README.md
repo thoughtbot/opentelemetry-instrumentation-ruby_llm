@@ -85,6 +85,33 @@ chat.with_otel_attributes(
 
 Attributes persist across calls on the same chat instance and the method returns `self` for chaining.
 
+### Conversation and user tracking
+
+To correlate multi-turn conversations, set `gen_ai.conversation.id` via `with_otel_attributes`
+using a real conversation/session identifier from your application (e.g. a thread or chat
+record id):
+
+```ruby
+chat.with_otel_attributes("gen_ai.conversation.id" => session.id)
+```
+
+The instrumentation does not generate one for you. Per the
+[GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-spans.md),
+when no conversation identifier is available, instrumentations should not populate the
+attribute — a fabricated value such as a random UUID should not be used as a fallback.
+
+You can attach user identity the same way, using the OpenTelemetry
+[`user.*`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/user/) registry
+attributes (the GenAI conventions do not define a user attribute):
+
+```ruby
+chat.with_otel_attributes(
+  "gen_ai.conversation.id" => session.id,
+  "user.id" => current_user.id,
+  "user.email" => current_user.email
+)
+```
+
 ## What's traced?
 
 | Feature | Status |
@@ -93,7 +120,7 @@ Attributes persist across calls on the same chat instance and the method returns
 | Tool calls | Supported |
 | Error handling | Supported |
 | Opt-in input/output content capture | Supported |
-| Conversation tracking (`gen_ai.conversation.id`) | Planned |
+| Conversation tracking (`gen_ai.conversation.id`) | Supported (set your own id via `with_otel_attributes`) |
 | System instructions capture | Supported (via `capture_content`) |
 | Custom attributes on traces and spans | Supported (via `with_otel_attributes`) |
 | Embeddings | Supported |
