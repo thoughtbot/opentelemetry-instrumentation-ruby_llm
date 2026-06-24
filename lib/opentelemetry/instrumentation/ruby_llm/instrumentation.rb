@@ -10,6 +10,7 @@ module OpenTelemetry
         instrumentation_version VERSION
 
         option :capture_content, default: false, validate: :boolean
+        option :tool_result_max_length, default: 500, validate: :integer
 
         present do
           defined?(::RubyLLM)

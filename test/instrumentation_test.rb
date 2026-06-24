@@ -285,6 +285,68 @@ class InstrumentationTest < Minitest::Test
     assert_equal "function", tool_span.attributes["gen_ai.tool.type"]
   end
 
+  def test_truncates_tool_result_to_configured_max_length
+    long_value = "x" * 1000
+    echo = Class.new(RubyLLM::Tool) do
+      def self.name = "echo"
+      description "Echoes a long string"
+
+      define_method(:execute) { long_value }
+    end
+
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(
+        {
+          status: 200,
+          headers: { "Content-Type" => "application/json" },
+          body: {
+            id: "chatcmpl-echo",
+            object: "chat.completion",
+            model: "gpt-4o-mini",
+            choices: [{
+              index: 0,
+              message: {
+                role: "assistant",
+                content: nil,
+                tool_calls: [{
+                  id: "call_echo",
+                  type: "function",
+                  function: { name: "echo", arguments: "{}" }
+                }]
+              },
+              finish_reason: "tool_calls"
+            }],
+            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+          }.to_json
+        },
+        {
+          status: 200,
+          headers: { "Content-Type" => "application/json" },
+          body: {
+            id: "chatcmpl-echo2",
+            object: "chat.completion",
+            model: "gpt-4o-mini",
+            choices: [{
+              index: 0,
+              message: { role: "assistant", content: "done" },
+              finish_reason: "stop"
+            }],
+            usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 }
+          }.to_json
+        }
+      )
+
+    OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:tool_result_max_length] = 700
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini").with_tool(echo)
+    chat.ask("echo please")
+
+    tool_span = EXPORTER.finished_spans.find { |s| s.name.start_with?("execute_tool ") }
+    assert_equal "x" * 700, tool_span.attributes["gen_ai.tool.call.result"]
+  ensure
+    OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:tool_result_max_length] = 500
+  end
+
   def test_records_error_when_tool_raises
     boom = Class.new(RubyLLM::Tool) do
       def self.name = "boom"

@@ -59,6 +59,16 @@ When enabled, the following attributes are added to chat spans:
 > [!WARNING]
 > Captured content may include sensitive or personally identifiable information (PII). Use with caution in production environments.
 
+### Tool result length
+
+Tool call results are recorded on `execute_tool` spans via `gen_ai.tool.call.result`, truncated to 500 characters by default. Adjust the limit with `tool_result_max_length`:
+
+```ruby
+OpenTelemetry::SDK.configure do |c|
+  c.use 'OpenTelemetry::Instrumentation::RubyLLM', tool_result_max_length: 1000
+end
+```
+
 ### Custom attributes
 
 Use `with_otel_attributes` to add arbitrary attributes to the span for each request. This is useful for adding per-request metadata like Langfuse prompt linking or trace-level tags:

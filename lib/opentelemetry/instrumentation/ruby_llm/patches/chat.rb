@@ -91,7 +91,7 @@ module OpenTelemetry
 
               # `RubyLLM::Tool::Halt#to_s` returns `@content.to_s`, so a single
               # `to_s` covers both the Halt and plain-result cases.
-              span.set_attribute("gen_ai.tool.call.result", result.to_s[0..500])
+              span.set_attribute("gen_ai.tool.call.result", result.to_s[0, tool_result_max_length])
 
               result
             end
@@ -104,6 +104,10 @@ module OpenTelemetry
             return env_value.to_s.strip.casecmp("true").zero? unless env_value.nil?
 
             RubyLLM::Instrumentation.instance.config[:capture_content]
+          end
+
+          def tool_result_max_length
+            RubyLLM::Instrumentation.instance.config[:tool_result_max_length]
           end
 
           def tracer
