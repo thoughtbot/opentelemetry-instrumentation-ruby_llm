@@ -64,12 +64,11 @@ if defined?(RubyLLM::Agent)
       assert_nil agent_span.attributes["gen_ai.agent.name"]
     end
 
-    def test_sets_conversation_id_for_persisted_chat_records
+    def test_sets_conversation_id_stamped_on_the_chat
       stub_chat_completion
 
       chat = RubyLLM.chat(model: "gpt-4o-mini")
-      chat.define_singleton_method(:persisted?) { true }
-      chat.define_singleton_method(:id) { 42 }
+      chat.otel_conversation_id = "42"
 
       agent = ResearchAgent.new(chat: chat)
       agent.ask("Hi")
@@ -141,10 +140,9 @@ if defined?(RubyLLM::Agent)
       stub_chat_completion
 
       llm_chat = RubyLLM.chat(model: "gpt-4o-mini")
+      llm_chat.otel_conversation_id = "7"
       record = Object.new
       record.define_singleton_method(:to_llm) { llm_chat }
-      record.define_singleton_method(:persisted?) { true }
-      record.define_singleton_method(:id) { 7 }
       record.define_singleton_method(:ask) { |message| llm_chat.ask(message) }
 
       agent = ResearchAgent.new(chat: record)

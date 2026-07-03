@@ -29,7 +29,8 @@ module OpenTelemetry
             agent_name = self.class.name
             attributes = { "gen_ai.operation.name" => "invoke_agent" }
             attributes["gen_ai.agent.name"] = agent_name if agent_name
-            attributes["gen_ai.conversation.id"] = chat.id.to_s if chat.respond_to?(:persisted?) && chat.persisted?
+            conversation_id = llm_chat.otel_conversation_id if llm_chat.respond_to?(:otel_conversation_id)
+            attributes["gen_ai.conversation.id"] = conversation_id if conversation_id
 
             span_name = agent_name ? "invoke_agent #{agent_name}" : "invoke_agent"
 

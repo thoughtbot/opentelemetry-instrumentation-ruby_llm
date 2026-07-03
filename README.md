@@ -97,9 +97,21 @@ Attributes persist across calls on the same chat instance and the method returns
 
 ### Conversation and user tracking
 
-To correlate multi-turn conversations, set `gen_ai.conversation.id` via `with_otel_attributes`
-using a real conversation/session identifier from your application (e.g. a thread or chat
-record id):
+When a chat is a persisted `acts_as_chat` record from
+[RubyLLM's Rails integration](https://rubyllm.com/rails/), its chat spans automatically
+carry `gen_ai.conversation.id` set to the record's id — multi-turn conversations
+correlate (and group as sessions in backends like Langfuse) with no extra code:
+
+```ruby
+chat_record = Chat.create!(model: "gpt-4o-mini")
+chat_record.ask("Hi")
+```
+
+This applies to the modern `acts_as` API (`config.use_new_acts_as = true`). Everywhere
+else — plain `RubyLLM.chat`, the legacy `acts_as` API, or a conversation store outside
+ActiveRecord — set `gen_ai.conversation.id` via `with_otel_attributes` using a real
+conversation/session identifier from your application. An id you set this way always
+wins over the automatic one:
 
 ```ruby
 chat.with_otel_attributes("gen_ai.conversation.id" => session.id)
@@ -139,7 +151,8 @@ This produces one trace rooted at `invoke_agent ResearchAgent`
 (`gen_ai.operation.name` = `invoke_agent`, `gen_ai.agent.name` = `ResearchAgent`), with
 the chat and tool spans nested beneath it.
 
-When the agent's chat is a persisted `acts_as_chat` record, the span also carries
+When the agent's chat is a persisted `acts_as_chat` record on the modern `acts_as` API,
+the `invoke_agent` span and the chat spans nested beneath it all carry
 `gen_ai.conversation.id` set to the record's id, so multi-turn conversations correlate
 across jobs and requests without any extra code.
 
@@ -170,7 +183,7 @@ agent.ask("...")
 | Agent invocations (`invoke_agent` spans) | Supported (`ruby_llm` >= 1.12.1) |
 | Error handling | Supported |
 | Opt-in input/output content capture | Supported |
-| Conversation tracking (`gen_ai.conversation.id`) | Supported (automatic for persisted agent chats, or set your own id via `with_otel_attributes`) |
+| Conversation tracking (`gen_ai.conversation.id`) | Supported (automatic for persisted `acts_as_chat` records, or set your own id via `with_otel_attributes`) |
 | System instructions capture | Supported (via `capture_content`) |
 | Custom attributes on traces and spans | Supported (via `with_otel_attributes`) |
 | Embeddings | Supported |

@@ -9,8 +9,10 @@ gem "opentelemetry-sdk"
 gem "opentelemetry-exporter-otlp"
 
 group :test do
+  gem "activerecord"
   gem "appraisal", "~> 2.5"
   gem "minitest"
   gem "rake"
+  gem "sqlite3"
   gem "webmock"
 end

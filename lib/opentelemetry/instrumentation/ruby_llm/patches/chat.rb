@@ -5,6 +5,13 @@ module OpenTelemetry
     module RubyLLM
       module Patches
         module Chat
+          attr_writer :otel_conversation_id
+
+          def otel_conversation_id
+            id = @otel_attributes&.[]("gen_ai.conversation.id") || @otel_conversation_id
+            id.respond_to?(:call) ? id.call : id
+          end
+
           def with_otel_attributes(attributes)
             @otel_attributes = attributes
             self
@@ -19,6 +26,8 @@ module OpenTelemetry
               "gen_ai.provider.name" => provider,
               "gen_ai.request.model" => model_id,
             }
+            conversation_id = otel_conversation_id
+            attributes["gen_ai.conversation.id"] = conversation_id if conversation_id
             # Per GenAI semconv: set `gen_ai.request.stream` if and only if
             # the request is streaming. Absence means non-streaming.
             attributes["gen_ai.request.stream"] = true if block_given?

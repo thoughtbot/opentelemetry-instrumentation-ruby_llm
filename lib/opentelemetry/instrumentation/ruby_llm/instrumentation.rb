@@ -44,6 +44,24 @@ module OpenTelemetry
             require_relative "patches/agent"
             ::RubyLLM::Agent.prepend(Patches::Agent)
           end
+
+          begin
+            require "active_support/lazy_load_hooks"
+
+            ::ActiveSupport.on_load(:active_record) do
+              require "ruby_llm/active_record/chat_methods"
+              require_relative "patches/chat_methods"
+              ::RubyLLM::ActiveRecord::ChatMethods.prepend(Patches::ChatMethods)
+            rescue LoadError
+              OpenTelemetry.logger.warn(
+                "[OpenTelemetry::Instrumentation::RubyLLM] could not load " \
+                "ruby_llm/active_record/chat_methods; gen_ai.conversation.id " \
+                "will not be set automatically on persisted chat records."
+              )
+            end
+          rescue LoadError
+            nil
+          end
         end
       end
     end
