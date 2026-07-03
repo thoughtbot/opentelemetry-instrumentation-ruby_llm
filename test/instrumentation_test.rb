@@ -1,6 +1,8 @@
 require "test_helper"
 
 class InstrumentationTest < Minitest::Test
+  include ChatCompletionStubs
+
   def setup
     EXPORTER.reset
 
@@ -31,29 +33,12 @@ class InstrumentationTest < Minitest::Test
     assert_equal "1.8.0", OpenTelemetry::Instrumentation::RubyLLM::Instrumentation::MINIMUM_RUBY_LLM_VERSION
   end
 
+  def test_agent_minimum_ruby_llm_version_is_pinned_at_1_12_1
+    assert_equal "1.12.1", OpenTelemetry::Instrumentation::RubyLLM::Instrumentation::AGENT_MINIMUM_RUBY_LLM_VERSION
+  end
+
   def test_creates_span_with_attributes
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-123",
-          object: "chat.completion",
-          model: "gpt-4o-mini",
-          choices: [
-            {
-              index: 0,
-              message: { role: "assistant", content: "Hello, world!" },
-              finish_reason: "stop"
-            }
-          ],
-          usage: {
-            prompt_tokens: 10,
-            completion_tokens: 5,
-            total_tokens: 15
-          }
-        }.to_json
-      )
+    stub_chat_completion
 
     chat = RubyLLM.chat(model: "gpt-4o-mini")
     chat.ask("Hi")
@@ -74,17 +59,9 @@ class InstrumentationTest < Minitest::Test
   end
 
   def test_marks_streaming_chat_requests
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-123",
-          model: "gpt-4o-mini",
-          choices: [{ index: 0, message: { role: "assistant", content: "Hi" }, finish_reason: "stop" }],
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
-        }.to_json
-      )
+    stub_chat_completion(
+      chat_completion_body(content: "Hi", usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 })
+    )
 
     chat = RubyLLM.chat(model: "gpt-4o-mini")
     chat.ask("Hi") { |_chunk| }
@@ -99,22 +76,17 @@ class InstrumentationTest < Minitest::Test
     # until 1.15.0 (we only assert the cache-read attribute here).
     # The accessor itself was added in ruby_llm 1.9.0.
     skip "cached_tokens accessor not available before ruby_llm 1.9.0" unless RubyLLM::Message.instance_methods.include?(:cached_tokens)
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-cache",
-          model: "gpt-4o-mini",
-          choices: [{ index: 0, message: { role: "assistant", content: "Hello!" }, finish_reason: "stop" }],
-          usage: {
-            prompt_tokens: 100,
-            completion_tokens: 5,
-            total_tokens: 105,
-            prompt_tokens_details: { cached_tokens: 75 }
-          }
-        }.to_json
+    stub_chat_completion(
+      chat_completion_body(
+        content: "Hello!",
+        usage: {
+          prompt_tokens: 100,
+          completion_tokens: 5,
+          total_tokens: 105,
+          prompt_tokens_details: { cached_tokens: 75 }
+        }
       )
+    )
 
     chat = RubyLLM.chat(model: "gpt-4o-mini")
     chat.ask("Hi")
@@ -176,22 +148,7 @@ class InstrumentationTest < Minitest::Test
   end
 
   def test_instruments_complete_called_directly
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-123",
-          object: "chat.completion",
-          model: "gpt-4o-mini",
-          choices: [{
-            index: 0,
-            message: { role: "assistant", content: "Hello, world!" },
-            finish_reason: "stop"
-          }],
-          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-        }.to_json
-      )
+    stub_chat_completion
 
     chat = RubyLLM.chat(model: "gpt-4o-mini")
     chat.add_message(role: :user, content: "Hi")
@@ -219,47 +176,20 @@ class InstrumentationTest < Minitest::Test
       end
     end
 
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        {
-          status: 200,
-          headers: { "Content-Type" => "application/json" },
-          body: {
-            id: "chatcmpl-123",
-            object: "chat.completion",
-            model: "gpt-4o-mini",
-            choices: [{
-              index: 0,
-              message: {
-                role: "assistant",
-                content: nil,
-                tool_calls: [{
-                  id: "call_abc123",
-                  type: "function",
-                  function: { name: "calculator", arguments: '{"expression":"2+2"}' }
-                }]
-              },
-              finish_reason: "tool_calls"
-            }],
-            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-          }.to_json
-        },
-        {
-          status: 200,
-          headers: { "Content-Type" => "application/json" },
-          body: {
-            id: "chatcmpl-456",
-            object: "chat.completion",
-            model: "gpt-4o-mini",
-            choices: [{
-              index: 0,
-              message: { role: "assistant", content: "The answer is 4" },
-              finish_reason: "stop"
-            }],
-            usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 }
-          }.to_json
-        }
+    stub_chat_completion(
+      chat_completion_body(
+        content: nil,
+        tool_calls: [{
+          id: "call_abc123",
+          type: "function",
+          function: { name: "calculator", arguments: '{"expression":"2+2"}' }
+        }]
+      ),
+      chat_completion_body(
+        content: "The answer is 4",
+        usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 }
       )
+    )
 
     chat = RubyLLM.chat(model: "gpt-4o-mini")
     chat.with_tool(calculator)
@@ -294,47 +224,20 @@ class InstrumentationTest < Minitest::Test
       define_method(:execute) { long_value }
     end
 
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        {
-          status: 200,
-          headers: { "Content-Type" => "application/json" },
-          body: {
-            id: "chatcmpl-echo",
-            object: "chat.completion",
-            model: "gpt-4o-mini",
-            choices: [{
-              index: 0,
-              message: {
-                role: "assistant",
-                content: nil,
-                tool_calls: [{
-                  id: "call_echo",
-                  type: "function",
-                  function: { name: "echo", arguments: "{}" }
-                }]
-              },
-              finish_reason: "tool_calls"
-            }],
-            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-          }.to_json
-        },
-        {
-          status: 200,
-          headers: { "Content-Type" => "application/json" },
-          body: {
-            id: "chatcmpl-echo2",
-            object: "chat.completion",
-            model: "gpt-4o-mini",
-            choices: [{
-              index: 0,
-              message: { role: "assistant", content: "done" },
-              finish_reason: "stop"
-            }],
-            usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 }
-          }.to_json
-        }
+    stub_chat_completion(
+      chat_completion_body(
+        content: nil,
+        tool_calls: [{
+          id: "call_echo",
+          type: "function",
+          function: { name: "echo", arguments: "{}" }
+        }]
+      ),
+      chat_completion_body(
+        content: "done",
+        usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 }
       )
+    )
 
     OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:tool_result_max_length] = 700
 
@@ -357,29 +260,17 @@ class InstrumentationTest < Minitest::Test
       end
     end
 
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-boom",
-          model: "gpt-4o-mini",
-          choices: [{
-            index: 0,
-            message: {
-              role: "assistant",
-              content: nil,
-              tool_calls: [{
-                id: "call_x",
-                type: "function",
-                function: { name: "boom", arguments: "{}" }
-              }]
-            },
-            finish_reason: "tool_calls"
-          }],
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
-        }.to_json
+    stub_chat_completion(
+      chat_completion_body(
+        content: nil,
+        tool_calls: [{
+          id: "call_x",
+          type: "function",
+          function: { name: "boom", arguments: "{}" }
+        }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
       )
+    )
 
     chat = RubyLLM.chat(model: "gpt-4o-mini").with_tool(boom)
     assert_raises(ArgumentError) { chat.ask("trigger") }
@@ -390,22 +281,7 @@ class InstrumentationTest < Minitest::Test
   end
 
   def test_does_not_capture_content_by_default
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-123",
-          object: "chat.completion",
-          model: "gpt-4o-mini",
-          choices: [{
-            index: 0,
-            message: { role: "assistant", content: "Hello, world!" },
-            finish_reason: "stop"
-          }],
-          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-        }.to_json
-      )
+    stub_chat_completion
 
     chat = RubyLLM.chat(model: "gpt-4o-mini")
     chat.with_instructions("You are helpful")
@@ -420,22 +296,7 @@ class InstrumentationTest < Minitest::Test
   def test_captures_content_when_enabled
     OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = true
 
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-123",
-          object: "chat.completion",
-          model: "gpt-4o-mini",
-          choices: [{
-            index: 0,
-            message: { role: "assistant", content: "Hello, world!" },
-            finish_reason: "stop"
-          }],
-          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-        }.to_json
-      )
+    stub_chat_completion
 
     chat = RubyLLM.chat(model: "gpt-4o-mini")
     chat.with_instructions("You are helpful")
@@ -507,22 +368,7 @@ class InstrumentationTest < Minitest::Test
   end
 
   def test_with_otel_attributes_sets_span_attributes
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-123",
-          object: "chat.completion",
-          model: "gpt-4o-mini",
-          choices: [{
-            index: 0,
-            message: { role: "assistant", content: "Hello!" },
-            finish_reason: "stop"
-          }],
-          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-        }.to_json
-      )
+    stub_chat_completion(chat_completion_body(content: "Hello!"))
 
     chat = RubyLLM.chat(model: "gpt-4o-mini")
     chat.with_otel_attributes(
@@ -537,22 +383,7 @@ class InstrumentationTest < Minitest::Test
   end
 
   def test_with_otel_attributes_returns_self_for_chaining
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-123",
-          object: "chat.completion",
-          model: "gpt-4o-mini",
-          choices: [{
-            index: 0,
-            message: { role: "assistant", content: "Hello!" },
-            finish_reason: "stop"
-          }],
-          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-        }.to_json
-      )
+    stub_chat_completion(chat_completion_body(content: "Hello!"))
 
     chat = RubyLLM.chat(model: "gpt-4o-mini")
     result = chat.with_otel_attributes("custom.category" => "test")
@@ -561,22 +392,7 @@ class InstrumentationTest < Minitest::Test
   end
 
   def test_with_otel_attributes_evaluates_callables
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-123",
-          object: "chat.completion",
-          model: "gpt-4o-mini",
-          choices: [{
-            index: 0,
-            message: { role: "assistant", content: "Hello!" },
-            finish_reason: "stop"
-          }],
-          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-        }.to_json
-      )
+    stub_chat_completion(chat_completion_body(content: "Hello!"))
 
     chat = RubyLLM.chat(model: "gpt-4o-mini")
     chat.with_otel_attributes(
@@ -591,22 +407,7 @@ class InstrumentationTest < Minitest::Test
   end
 
   def test_works_without_otel_attributes
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-123",
-          object: "chat.completion",
-          model: "gpt-4o-mini",
-          choices: [{
-            index: 0,
-            message: { role: "assistant", content: "Hello!" },
-            finish_reason: "stop"
-          }],
-          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-        }.to_json
-      )
+    stub_chat_completion(chat_completion_body(content: "Hello!"))
 
     chat = RubyLLM.chat(model: "gpt-4o-mini")
     response = chat.ask("Hi")
@@ -617,22 +418,7 @@ class InstrumentationTest < Minitest::Test
   def test_captures_ruby_llm_content_with_attachments
     OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = true
 
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-123",
-          object: "chat.completion",
-          model: "gpt-4o-mini",
-          choices: [{
-            index: 0,
-            message: { role: "assistant", content: "A cat." },
-            finish_reason: "stop"
-          }],
-          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-        }.to_json
-      )
+    stub_chat_completion(chat_completion_body(content: "A cat."))
 
     content = RubyLLM::Content.new("What is this?", "https://example.com/cat.png")
 
@@ -662,22 +448,7 @@ class InstrumentationTest < Minitest::Test
     skip "RubyLLM::Content::Raw not available before ruby_llm 1.9.0" unless defined?(RubyLLM::Content::Raw)
     OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = true
 
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-123",
-          object: "chat.completion",
-          model: "gpt-4o-mini",
-          choices: [{
-            index: 0,
-            message: { role: "assistant", content: "Acknowledged." },
-            finish_reason: "stop"
-          }],
-          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-        }.to_json
-      )
+    stub_chat_completion(chat_completion_body(content: "Acknowledged."))
 
     raw = RubyLLM::Content::Raw.new([{ type: "text", text: "raw payload" }])
 
@@ -699,22 +470,7 @@ class InstrumentationTest < Minitest::Test
     skip "RubyLLM::Content::Raw not available before ruby_llm 1.9.0" unless defined?(RubyLLM::Content::Raw)
     OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = true
 
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-123",
-          object: "chat.completion",
-          model: "gpt-4o-mini",
-          choices: [{
-            index: 0,
-            message: { role: "assistant", content: "Acknowledged." },
-            finish_reason: "stop"
-          }],
-          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-        }.to_json
-      )
+    stub_chat_completion(chat_completion_body(content: "Acknowledged."))
 
     raw_block = RubyLLM::Content::Raw.new([{ type: "text", text: "You are helpful" }])
 
@@ -736,22 +492,7 @@ class InstrumentationTest < Minitest::Test
   def test_captures_content_when_enabled_via_env_var
     ENV["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = "true"
 
-    stub_request(:post, "https://api.openai.com/v1/chat/completions")
-      .to_return(
-        status: 200,
-        headers: { "Content-Type" => "application/json" },
-        body: {
-          id: "chatcmpl-123",
-          object: "chat.completion",
-          model: "gpt-4o-mini",
-          choices: [{
-            index: 0,
-            message: { role: "assistant", content: "Hello, world!" },
-            finish_reason: "stop"
-          }],
-          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-        }.to_json
-      )
+    stub_chat_completion
 
     chat = RubyLLM.chat(model: "gpt-4o-mini")
     chat.ask("Hi")

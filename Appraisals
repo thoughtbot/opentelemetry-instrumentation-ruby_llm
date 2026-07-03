@@ -9,6 +9,10 @@ appraise "ruby_llm-1.8.0" do
   gem "ruby_llm", "1.8.0"
 end
 
+appraise "ruby_llm-1.12.1" do
+  gem "ruby_llm", "1.12.1"
+end
+
 appraise "ruby_llm-1-latest" do
   gem "ruby_llm", "~> 1.8"
 end

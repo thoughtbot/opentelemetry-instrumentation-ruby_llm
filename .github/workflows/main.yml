@@ -20,6 +20,7 @@ jobs:
           - '3.1'
         gemfile:
           - gemfiles/ruby_llm_1.8.0.gemfile
+          - gemfiles/ruby_llm_1.12.1.gemfile
           - gemfiles/ruby_llm_1_latest.gemfile
 
     env:

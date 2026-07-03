@@ -122,15 +122,55 @@ chat.with_otel_attributes(
 )
 ```
 
+### Agent tracing
+
+On `ruby_llm` >= 1.12.1, invoking a `RubyLLM::Agent` subclass wraps the whole run —
+including tool loops and their follow-up completions — in a single `invoke_agent` span:
+
+```ruby
+class ResearchAgent < RubyLLM::Agent
+  model "gpt-4o-mini"
+end
+
+ResearchAgent.new.ask("Find recent papers on prompt caching")
+```
+
+This produces one trace rooted at `invoke_agent ResearchAgent`
+(`gen_ai.operation.name` = `invoke_agent`, `gen_ai.agent.name` = `ResearchAgent`), with
+the chat and tool spans nested beneath it.
+
+When the agent's chat is a persisted `acts_as_chat` record, the span also carries
+`gen_ai.conversation.id` set to the record's id, so multi-turn conversations correlate
+across jobs and requests without any extra code.
+
+With `capture_content` enabled, the `invoke_agent` span also records
+`gen_ai.input.messages` (the conversation history going in) and
+`gen_ai.output.messages` (the final response), so backends that read the trace root
+— like Langfuse — show the run's input and output at the trace level.
+
+Only agent *instances* are wrapped. Class-level entry points that return the chat
+record itself (`ResearchAgent.find(id)`, `ResearchAgent.create!`) bypass the agent
+span — wrap the record with `ResearchAgent.new(chat: record)` to get one.
+
+`with_otel_attributes` works on agents too — attributes are set on the `invoke_agent`
+span (the trace root) and forwarded to the underlying chat:
+
+```ruby
+agent = ResearchAgent.new(chat: chat_record)
+agent.with_otel_attributes("user.id" => current_user.id)
+agent.ask("...")
+```
+
 ## What's traced?
 
 | Feature | Status |
 |---------|--------|
 | Chat completions | Supported |
 | Tool calls | Supported |
+| Agent invocations (`invoke_agent` spans) | Supported (`ruby_llm` >= 1.12.1) |
 | Error handling | Supported |
 | Opt-in input/output content capture | Supported |
-| Conversation tracking (`gen_ai.conversation.id`) | Supported (set your own id via `with_otel_attributes`) |
+| Conversation tracking (`gen_ai.conversation.id`) | Supported (automatic for persisted agent chats, or set your own id via `with_otel_attributes`) |
 | System instructions capture | Supported (via `capture_content`) |
 | Custom attributes on traces and spans | Supported (via `with_otel_attributes`) |
 | Embeddings | Supported |
@@ -143,6 +183,7 @@ This gem follows the [OpenTelemetry GenAI Semantic Conventions](https://opentele
 This gem is tested against the following `ruby_llm` versions:
 
 - `1.8.0` (minimum supported)
+- `1.12.1` (agent tracing floor — `RubyLLM::Agent` shipped in 1.12.0, but only loads outside Rails from 1.12.1)
 - `~> 1.8` (latest 1.x release)
 
 The Ruby matrix covers Ruby 3.1, 3.2, 3.3, and 3.4.

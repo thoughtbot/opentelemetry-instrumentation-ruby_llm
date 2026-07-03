@@ -5,6 +5,7 @@ module OpenTelemetry
     module RubyLLM
       class Instrumentation < OpenTelemetry::Instrumentation::Base
         MINIMUM_RUBY_LLM_VERSION = "1.8.0"
+        AGENT_MINIMUM_RUBY_LLM_VERSION = "1.12.1"
 
         instrumentation_name "OpenTelemetry::Instrumentation::RubyLLM"
         instrumentation_version VERSION
@@ -38,6 +39,11 @@ module OpenTelemetry
           require_relative "patches/embedding"
           ::RubyLLM::Chat.prepend(Patches::Chat)
           ::RubyLLM::Embedding.singleton_class.prepend(Patches::Embedding)
+
+          if Gem::Version.new(::RubyLLM::VERSION) >= Gem::Version.new(AGENT_MINIMUM_RUBY_LLM_VERSION)
+            require_relative "patches/agent"
+            ::RubyLLM::Agent.prepend(Patches::Agent)
+          end
         end
       end
     end
