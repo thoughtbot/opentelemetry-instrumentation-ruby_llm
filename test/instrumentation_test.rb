@@ -406,6 +406,27 @@ class InstrumentationTest < Minitest::Test
     assert_equal "fixed", span.attributes["custom.static"]
   end
 
+  def test_with_otel_attributes_applied_on_api_failure
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(status: 500, body: "Internal Server Error")
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    chat.with_otel_attributes(
+      "langfuse.trace.name" => "My Agent",
+      "custom.last_role" => -> { chat.messages.last&.role.to_s }
+    )
+
+    assert_raises do
+      chat.ask("Hi")
+    end
+
+    span = EXPORTER.finished_spans.last
+    assert_equal "chat gpt-4o-mini", span.name
+    assert_equal OpenTelemetry::Trace::Status::ERROR, span.status.code
+    assert_equal "My Agent", span.attributes["langfuse.trace.name"]
+    assert_equal "user", span.attributes["custom.last_role"]
+  end
+
   def test_works_without_otel_attributes
     stub_chat_completion(chat_completion_body(content: "Hello!"))
 

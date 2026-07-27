@@ -72,9 +72,9 @@ module OpenTelemetry
                 end
               end
 
-              @otel_attributes&.each { |key, value| span.set_attribute(key, value.respond_to?(:call) ? value.call : value) }
-
               result
+            ensure
+              @otel_attributes&.each { |key, value| span.set_attribute(key, value.respond_to?(:call) ? value.call : value) }
             end
           end
 
