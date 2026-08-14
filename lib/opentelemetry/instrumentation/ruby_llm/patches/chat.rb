@@ -98,9 +98,10 @@ module OpenTelemetry
                 raise
               end
 
-              # `RubyLLM::Tool::Halt#to_s` returns `@content.to_s`, so a single
-              # `to_s` covers both the Halt and plain-result cases.
-              span.set_attribute("gen_ai.tool.call.result", result.to_s[0, tool_result_max_length])
+              # `RubyLLM::Tool::Halt#to_s` returns `@content.to_s`, so preserve
+              # `to_s` for Halt and plain-result cases while serializing hashes.
+              tool_result = result.is_a?(Hash) ? result.to_json : result.to_s
+              span.set_attribute("gen_ai.tool.call.result", tool_result[0, tool_result_max_length])
 
               result
             end
