@@ -116,6 +116,12 @@ module OpenTelemetry
           end
 
           def tool_result_max_length
+            env_value = ENV["OTEL_INSTRUMENTATION_GENAI_TOOL_RESULT_MAX_LENGTH"]
+            unless env_value.nil?
+              parsed = Integer(env_value.to_s.strip, exception: false)
+              return parsed unless parsed.nil?
+            end
+
             RubyLLM::Instrumentation.instance.config[:tool_result_max_length]
           end
 

@@ -69,6 +69,12 @@ OpenTelemetry::SDK.configure do |c|
 end
 ```
 
+Or set the environment variable:
+
+```bash
+export OTEL_INSTRUMENTATION_GENAI_TOOL_RESULT_MAX_LENGTH=1000
+```
+
 ### Custom attributes
 
 Use `with_otel_attributes` to add arbitrary attributes to the span for each request. This is useful for adding per-request metadata like Langfuse prompt linking or trace-level tags:
