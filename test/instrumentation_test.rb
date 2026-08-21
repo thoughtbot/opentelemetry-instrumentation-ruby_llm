@@ -250,6 +250,37 @@ class InstrumentationTest < Minitest::Test
     OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:tool_result_max_length] = 500
   end
 
+  def test_serializes_hash_tool_result_as_json
+    structured_tool = Class.new(RubyLLM::Tool) do
+      def self.name = "structured_tool"
+      description "Returns structured data"
+
+      def execute
+        { answer: 4, source: "calculator" }
+      end
+    end
+
+    stub_chat_completion(
+      chat_completion_body(
+        content: nil,
+        tool_calls: [{
+          id: "call_structured",
+          type: "function",
+          function: { name: "structured", arguments: "{}" }
+        }]
+      ),
+      chat_completion_body(
+        content: "The answer is 4",
+        usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 }
+      )
+    )
+
+    RubyLLM.chat(model: "gpt-4o-mini").with_tool(structured_tool).ask("What is 2+2?")
+
+    tool_span = EXPORTER.finished_spans.find { |s| s.name.start_with?("execute_tool ") }
+    assert_equal({ "answer" => 4, "source" => "calculator" }, JSON.parse(tool_span.attributes["gen_ai.tool.call.result"]))
+  end
+
   def test_records_error_when_tool_raises
     boom = Class.new(RubyLLM::Tool) do
       def self.name = "boom"
