@@ -232,6 +232,39 @@ if defined?(RubyLLM::Agent)
       OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = false
     end
 
+    def test_captures_tool_definitions_on_agent_span_when_enabled
+      OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = true
+
+      stub_chat_completion
+
+      weather = Class.new(RubyLLM::Tool) do
+        def self.name = "weather"
+        description "Looks up the weather"
+        param :city, type: "string", desc: "City name"
+
+        def execute(city:)
+          "Sunny in #{city}"
+        end
+      end
+
+      agent = ResearchAgent.new
+      agent.with_tool(weather)
+      agent.ask("Weather in Riga?")
+
+      agent_span = EXPORTER.finished_spans.find { |s| s.name.start_with?("invoke_agent") }
+      definition = JSON.parse(agent_span.attributes["gen_ai.tool.definitions"]).first
+
+      assert_equal "function", definition["type"]
+      assert_equal "weather", definition["name"]
+      assert_equal "Looks up the weather", definition["description"]
+      assert_equal(
+        { "type" => "string", "description" => "City name" },
+        definition["parameters"]["properties"]["city"]
+      )
+    ensure
+      OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = false
+    end
+
     def test_does_not_capture_content_on_agent_span_by_default
       stub_chat_completion
 
@@ -240,6 +273,7 @@ if defined?(RubyLLM::Agent)
       agent_span = EXPORTER.finished_spans.find { |s| s.name.start_with?("invoke_agent") }
       assert_nil agent_span.attributes["gen_ai.input.messages"]
       assert_nil agent_span.attributes["gen_ai.output.messages"]
+      assert_nil agent_span.attributes["gen_ai.tool.definitions"]
     end
   end
 end

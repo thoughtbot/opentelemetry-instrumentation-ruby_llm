@@ -3,13 +3,14 @@
 module OpenTelemetry
   module Instrumentation
     module RubyLLM
-      # Converts `RubyLLM` messages and content into the JSON shape defined by
-      # the GenAI semantic conventions for input/output messages and system
-      # instructions:
+      # Converts `RubyLLM` messages, content and tools into the JSON shape
+      # defined by the GenAI semantic conventions for input/output messages,
+      # system instructions and tool definitions:
       #
-      #   https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-input-messages.json
-      #   https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-output-messages.json
-      #   https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-system-instructions.json
+      #   https://github.com/open-telemetry/semantic-conventions-genai/blob/main/model/gen-ai/gen-ai-input-messages.json
+      #   https://github.com/open-telemetry/semantic-conventions-genai/blob/main/model/gen-ai/gen-ai-output-messages.json
+      #   https://github.com/open-telemetry/semantic-conventions-genai/blob/main/model/gen-ai/gen-ai-system-instructions.json
+      #   https://github.com/open-telemetry/semantic-conventions-genai/blob/main/model/gen-ai/gen-ai-tool-definitions.json
       #
       # Kept separate from the `RubyLLM::Chat` patch so the formatting logic
       # does not pollute the patched class.
@@ -24,6 +25,46 @@ module OpenTelemetry
 
         def self.format_system_instructions(messages)
           messages.flat_map { |m| format_content(m.content) }.to_json
+        end
+
+        # `tools` may be a `RubyLLM::Chat#tools` hash (name => tool instance)
+        # or a plain collection of tool instances. Returns `nil` when there are
+        # no tools, so callers can skip setting the attribute.
+        def self.format_tool_definitions(tools)
+          list = tools.respond_to?(:values) ? tools.values : Array(tools)
+          return nil if list.empty?
+
+          list.map { |tool| format_tool_definition(tool) }.to_json
+        end
+
+        private_class_method def self.format_tool_definition(tool)
+          definition = { type: "function", name: tool.name }
+          definition[:description] = tool.description if tool.description
+          parameters = format_tool_parameters(tool)
+          definition[:parameters] = parameters if parameters
+          definition
+        end
+
+        # Returns the JSON Schema document describing the tool's parameters.
+        private_class_method def self.format_tool_parameters(tool)
+          # `RubyLLM::Tool#params_schema` was added in ruby_llm 1.9.0; older
+          # versions only expose `RubyLLM::Parameter` objects, so build the
+          # schema the same way the 1.8.0 providers do.
+          return tool.params_schema if tool.respond_to?(:params_schema)
+          return nil unless tool.respond_to?(:parameters)
+
+          parameters = tool.parameters
+          return nil if parameters.nil? || parameters.empty?
+
+          properties = parameters.to_h do |name, param|
+            [name.to_s, { type: param.type.to_s, description: param.description }.compact]
+          end
+
+          {
+            type: "object",
+            properties: properties,
+            required: parameters.select { |_, param| param.required }.keys.map(&:to_s)
+          }
         end
 
         private_class_method def self.format_message(message)

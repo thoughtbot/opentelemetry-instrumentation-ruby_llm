@@ -31,6 +31,10 @@ module OpenTelemetry
             attributes["gen_ai.agent.name"] = agent_name if agent_name
             conversation_id = llm_chat.otel_conversation_id if llm_chat.respond_to?(:otel_conversation_id)
             attributes["gen_ai.conversation.id"] = conversation_id if conversation_id
+            if capture_content? && llm_chat.respond_to?(:tools)
+              tool_definitions = MessageFormatter.format_tool_definitions(llm_chat.tools)
+              attributes["gen_ai.tool.definitions"] = tool_definitions if tool_definitions
+            end
 
             span_name = agent_name ? "invoke_agent #{agent_name}" : "invoke_agent"
 

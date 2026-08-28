@@ -559,4 +559,115 @@ class InstrumentationTest < Minitest::Test
   ensure
     ENV.delete("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT")
   end
+
+  def test_does_not_capture_tool_definitions_by_default
+    stub_chat_completion
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    chat.with_tool(calculator_tool)
+    chat.ask("What is 2+2?")
+
+    span = EXPORTER.finished_spans.first
+    assert_nil span.attributes["gen_ai.tool.definitions"]
+  end
+
+  def test_captures_tool_definitions_when_enabled
+    OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = true
+
+    stub_chat_completion
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    chat.with_tool(calculator_tool)
+    chat.ask("What is 2+2?")
+
+    span = EXPORTER.finished_spans.first
+    tool_definitions = JSON.parse(span.attributes["gen_ai.tool.definitions"])
+
+    assert_equal 1, tool_definitions.length
+
+    definition = tool_definitions.first
+    assert_equal "function", definition["type"]
+    assert_equal "calculator", definition["name"]
+    assert_equal "Performs math", definition["description"]
+
+    parameters = definition["parameters"]
+    assert_equal "object", parameters["type"]
+    assert_equal({ "type" => "string", "description" => "Math expression" }, parameters["properties"]["expression"])
+    assert_equal ["expression"], parameters["required"]
+  ensure
+    OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = false
+  end
+
+  def test_omits_tool_definitions_when_no_tools_are_registered
+    OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = true
+
+    stub_chat_completion
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    chat.ask("Hi")
+
+    span = EXPORTER.finished_spans.first
+    assert_nil span.attributes["gen_ai.tool.definitions"]
+  ensure
+    OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = false
+  end
+
+  def test_captures_tool_definitions_on_api_failure
+    OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = true
+
+    stub_request(:post, "https://api.openai.com/v1/chat/completions")
+      .to_return(status: 500, body: "Internal Server Error")
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    chat.with_tool(calculator_tool)
+
+    assert_raises { chat.ask("What is 2+2?") }
+
+    span = EXPORTER.finished_spans.last
+    tool_definitions = JSON.parse(span.attributes["gen_ai.tool.definitions"])
+    assert_equal ["calculator"], tool_definitions.map { |d| d["name"] }
+  ensure
+    OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = false
+  end
+
+  def test_captures_tool_definitions_without_a_description
+    OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = true
+
+    stub_chat_completion
+
+    ping = Class.new(RubyLLM::Tool) do
+      def self.name = "ping"
+
+      def execute
+        "pong"
+      end
+    end
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+    chat.with_tool(ping)
+    chat.ask("Ping")
+
+    span = EXPORTER.finished_spans.first
+    definition = JSON.parse(span.attributes["gen_ai.tool.definitions"]).first
+
+    assert_equal "function", definition["type"]
+    assert_equal "ping", definition["name"]
+    refute definition.key?("description")
+  ensure
+    OpenTelemetry::Instrumentation::RubyLLM::Instrumentation.instance.config[:capture_content] = false
+  end
+
+  private
+
+  def calculator_tool
+    Class.new(RubyLLM::Tool) do
+      def self.name = "calculator"
+      description "Performs math"
+      param :expression, type: "string", desc: "Math expression"
+
+      def execute(expression:)
+        eval(expression).to_s
+      end
+    end
+  end
 end

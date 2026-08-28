@@ -55,6 +55,7 @@ When enabled, the following attributes are added to chat spans:
 | `gen_ai.system_instructions` | System instructions provided via `with_instructions` |
 | `gen_ai.input.messages` | Input messages sent to the model |
 | `gen_ai.output.messages` | Final output messages from the model |
+| `gen_ai.tool.definitions` | Definitions of the tools available to the model (name, description, parameter JSON Schema), set only when the chat has tools |
 
 > [!WARNING]
 > Captured content may include sensitive or personally identifiable information (PII). Use with caution in production environments.
@@ -163,9 +164,10 @@ the `invoke_agent` span and the chat spans nested beneath it all carry
 across jobs and requests without any extra code.
 
 With `capture_content` enabled, the `invoke_agent` span also records
-`gen_ai.input.messages` (the conversation history going in) and
-`gen_ai.output.messages` (the final response), so backends that read the trace root
-— like Langfuse — show the run's input and output at the trace level.
+`gen_ai.input.messages` (the conversation history going in),
+`gen_ai.output.messages` (the final response) and `gen_ai.tool.definitions` (the
+agent's tools), so backends that read the trace root — like Langfuse — show the run's
+input, output and available tools at the trace level.
 
 Only agent *instances* are wrapped. Class-level entry points that return the chat
 record itself (`ResearchAgent.find(id)`, `ResearchAgent.create!`) bypass the agent
@@ -191,6 +193,7 @@ agent.ask("...")
 | Opt-in input/output content capture | Supported |
 | Conversation tracking (`gen_ai.conversation.id`) | Supported (automatic for persisted `acts_as_chat` records, or set your own id via `with_otel_attributes`) |
 | System instructions capture | Supported (via `capture_content`) |
+| Tool definitions capture (`gen_ai.tool.definitions`) | Supported (via `capture_content`) |
 | Custom attributes on traces and spans | Supported (via `with_otel_attributes`) |
 | Embeddings | Supported |
 | Streaming | Planned |

@@ -31,6 +31,12 @@ module OpenTelemetry
             # Per GenAI semconv: set `gen_ai.request.stream` if and only if
             # the request is streaming. Absence means non-streaming.
             attributes["gen_ai.request.stream"] = true if block_given?
+            # Tool definitions describe the request, so they are set up front
+            # and stay on the span even when the request raises.
+            if capture_content?
+              tool_definitions = MessageFormatter.format_tool_definitions(tools)
+              attributes["gen_ai.tool.definitions"] = tool_definitions if tool_definitions
+            end
 
             tracer.in_span("chat #{model_id}", attributes: attributes, kind: OpenTelemetry::Trace::SpanKind::CLIENT) do |span|
               begin
