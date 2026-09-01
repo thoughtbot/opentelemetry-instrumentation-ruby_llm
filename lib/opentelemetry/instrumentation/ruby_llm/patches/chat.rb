@@ -32,6 +32,8 @@ module OpenTelemetry
             # the request is streaming. Absence means non-streaming.
             attributes["gen_ai.request.stream"] = true if block_given?
 
+            existing_messages = @messages.dup
+
             tracer.in_span("chat #{model_id}", attributes: attributes, kind: OpenTelemetry::Trace::SpanKind::CLIENT) do |span|
               begin
                 result = super
@@ -42,8 +44,8 @@ module OpenTelemetry
                 raise
               end
 
-              if @messages.last
-                response = @messages.last
+              response = (@messages - existing_messages).find { |m| m.role == :assistant }
+              if response
                 span.set_attribute("gen_ai.response.model", response.model_id) if response.model_id
                 span.set_attribute("gen_ai.usage.input_tokens", response.input_tokens) if response.input_tokens
                 span.set_attribute("gen_ai.usage.output_tokens", response.output_tokens) if response.output_tokens

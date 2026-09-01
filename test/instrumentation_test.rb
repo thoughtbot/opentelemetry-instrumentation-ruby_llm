@@ -215,6 +215,95 @@ class InstrumentationTest < Minitest::Test
     assert_equal "function", tool_span.attributes["gen_ai.tool.type"]
   end
 
+  def test_each_chat_span_reports_its_own_call_usage_in_tool_loop
+    calculator = Class.new(RubyLLM::Tool) do
+      def self.name = "calculator"
+      description "Performs math"
+      param :expression, type: "string", desc: "Math expression"
+
+      def execute(expression:)
+        eval(expression).to_s
+      end
+    end
+
+    stub_chat_completion(
+      chat_completion_body(
+        content: nil,
+        tool_calls: [{
+          id: "call_abc123",
+          type: "function",
+          function: { name: "calculator", arguments: '{"expression":"2+2"}' }
+        }],
+        usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13 }
+      ),
+      chat_completion_body(
+        content: "The answer is 4",
+        usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 }
+      )
+    )
+
+    chat = RubyLLM.chat(model: "gpt-4o-mini").with_tool(calculator)
+    chat.ask("What is 2+2?")
+
+    chat_spans = EXPORTER.finished_spans.select { |s| s.name == "chat gpt-4o-mini" }
+    root_span = chat_spans.find { |s| s.parent_span_id == OpenTelemetry::Trace::INVALID_SPAN_ID }
+    nested_span = (chat_spans - [root_span]).first
+
+    assert_equal 10, root_span.attributes["gen_ai.usage.input_tokens"]
+    assert_equal 3, root_span.attributes["gen_ai.usage.output_tokens"]
+    assert_equal 20, nested_span.attributes["gen_ai.usage.input_tokens"]
+    assert_equal 5, nested_span.attributes["gen_ai.usage.output_tokens"]
+  end
+
+  def test_usage_attribution_survives_message_list_changes_during_tool_loop
+    chat = RubyLLM.chat(model: "gpt-4o-mini")
+
+    mutator = Class.new(RubyLLM::Tool) do
+      def self.name = "mutator"
+      description "Changes the chat instructions"
+
+      define_method(:execute) do
+        chat.with_instructions("Be brief", append: true)
+        chat.with_instructions("Be kind", append: true)
+        "done"
+      end
+    end
+
+    stub_chat_completion(
+      chat_completion_body(
+        content: "First turn",
+        usage: { prompt_tokens: 7, completion_tokens: 2, total_tokens: 9 }
+      ),
+      chat_completion_body(
+        content: nil,
+        tool_calls: [{
+          id: "call_mut",
+          type: "function",
+          function: { name: "mutator", arguments: "{}" }
+        }],
+        usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13 }
+      ),
+      chat_completion_body(
+        content: "Second turn",
+        usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 }
+      )
+    )
+
+    chat.with_tool(mutator)
+    chat.ask("Hi")
+    EXPORTER.reset
+    chat.ask("Go")
+
+    chat_spans = EXPORTER.finished_spans.select { |s| s.name == "chat gpt-4o-mini" }
+    root_span = chat_spans.find { |s| s.parent_span_id == OpenTelemetry::Trace::INVALID_SPAN_ID }
+    nested_span = (chat_spans - [root_span]).first
+
+    assert_equal 10, root_span.attributes["gen_ai.usage.input_tokens"]
+    assert_equal 3, root_span.attributes["gen_ai.usage.output_tokens"]
+    assert_equal 20, nested_span.attributes["gen_ai.usage.input_tokens"]
+    assert_equal 5, nested_span.attributes["gen_ai.usage.output_tokens"]
+  end
+
   def test_truncates_tool_result_to_configured_max_length
     long_value = "x" * 1000
     echo = Class.new(RubyLLM::Tool) do
