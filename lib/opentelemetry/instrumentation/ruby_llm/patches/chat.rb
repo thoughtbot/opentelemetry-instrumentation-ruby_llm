@@ -44,8 +44,13 @@ module OpenTelemetry
 
               if @messages.last
                 response = @messages.last
+                cached_tokens = response.respond_to?(:cached_tokens) ? response.cached_tokens.to_i : 0
+                cache_creation_tokens = response.respond_to?(:cache_creation_tokens) ? response.cache_creation_tokens.to_i : 0
+
                 span.set_attribute("gen_ai.response.model", response.model_id) if response.model_id
-                span.set_attribute("gen_ai.usage.input_tokens", response.input_tokens) if response.input_tokens
+                if response.input_tokens
+                  span.set_attribute("gen_ai.usage.input_tokens", response.input_tokens.to_i + cached_tokens + cache_creation_tokens)
+                end
                 span.set_attribute("gen_ai.usage.output_tokens", response.output_tokens) if response.output_tokens
                 span.set_attribute("gen_ai.request.temperature", @temperature) if @temperature
 
