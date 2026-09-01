@@ -92,6 +92,7 @@ class InstrumentationTest < Minitest::Test
     chat.ask("Hi")
 
     span = EXPORTER.finished_spans.first
+    assert_equal 100, span.attributes["gen_ai.usage.input_tokens"]
     assert_equal 75, span.attributes["gen_ai.usage.cache_read.input_tokens"]
     assert_equal 0, span.attributes["gen_ai.usage.cache_creation.input_tokens"]
   end
@@ -125,6 +126,7 @@ class InstrumentationTest < Minitest::Test
     chat.ask("Hi")
 
     span = EXPORTER.finished_spans.first
+    assert_equal 195, span.attributes["gen_ai.usage.input_tokens"]
     assert_equal 75, span.attributes["gen_ai.usage.cache_read.input_tokens"]
     assert_equal 20, span.attributes["gen_ai.usage.cache_creation.input_tokens"]
   end
