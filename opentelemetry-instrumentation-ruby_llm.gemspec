@@ -15,7 +15,7 @@ Gem::Specification.new do |spec|
 
   spec.metadata["homepage_uri"] = spec.homepage
 
-  spec.files = `git ls-files`.split("\n")
+  spec.files = `git ls-files lib LICENSE README.md`.split("\n")
   spec.require_paths = ["lib"]
 
   spec.add_dependency "opentelemetry-api", "~> 1.0"
