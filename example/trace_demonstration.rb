@@ -4,7 +4,9 @@ require "bundler/inline"
 
 gemfile(true) do
   source "https://rubygems.org"
-  gem "ruby_llm"
+  # The instrumentation supports ruby_llm 1.x and 2.x; these demos are pinned
+  # to the current major so the API they call matches what bundler installs.
+  gem "ruby_llm", "~> 2.0"
   gem "opentelemetry-api"
   gem "opentelemetry-sdk"
   gem "opentelemetry-instrumentation-ruby_llm", path: "../"

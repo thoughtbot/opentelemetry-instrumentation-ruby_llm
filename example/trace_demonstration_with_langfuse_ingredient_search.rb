@@ -4,7 +4,10 @@ require "bundler/inline"
 
 gemfile(true) do
   source "https://rubygems.org"
-  gem "ruby_llm"
+  # The instrumentation supports ruby_llm 1.x and 2.x; these demos are written
+  # against the current major, which renamed `Tool.param` to `Tool.parameter`
+  # and `Chat#with_tool` to `Chat#with_tools`.
+  gem "ruby_llm", "~> 2.0"
   gem "opentelemetry-api"
   gem "opentelemetry-sdk"
   gem "opentelemetry-exporter-otlp"
@@ -62,7 +65,7 @@ INGREDIENT_DATABASE = {
 
 class SearchForIngredientDetails < RubyLLM::Tool
   description "Searches a database for detailed information about a supplement ingredient, including side effects, interactions, and dosage"
-  param :ingredient_name, type: "string", desc: "The name of the ingredient to search for (e.g., 'vitamin d3', 'magnesium glycinate')"
+  parameter :ingredient_name, type: "string", description: "The name of the ingredient to search for (e.g., 'vitamin d3', 'magnesium glycinate')"
 
   def execute(ingredient_name:)
     key = ingredient_name.downcase.strip
@@ -79,7 +82,7 @@ end
 
 chat = RubyLLM.chat
 chat.with_instructions("You are a knowledgeable health supplement assistant. Use the search tool to look up ingredient details before answering questions.")
-chat.with_tool(SearchForIngredientDetails)
+chat.with_tools(SearchForIngredientDetails)
 
 questions = [
   { text: "What are the side effects of Vitamin D3?", ingredient: "vitamin d3" },

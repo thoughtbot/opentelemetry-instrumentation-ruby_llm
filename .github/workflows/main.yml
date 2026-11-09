@@ -22,6 +22,8 @@ jobs:
           - gemfiles/ruby_llm_1.8.0.gemfile
           - gemfiles/ruby_llm_1.12.1.gemfile
           - gemfiles/ruby_llm_1_latest.gemfile
+          - gemfiles/ruby_llm_2.0.0.gemfile
+          - gemfiles/ruby_llm_2_latest.gemfile
 
     env:
       BUNDLE_GEMFILE: ${{ github.workspace }}/${{ matrix.gemfile }}

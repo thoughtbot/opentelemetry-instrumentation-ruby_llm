@@ -4,7 +4,10 @@ require "bundler/inline"
 
 gemfile(true) do
   source "https://rubygems.org"
-  gem "ruby_llm"
+  # The instrumentation supports ruby_llm 1.x and 2.x; these demos are written
+  # against the current major, which renamed `Tool.param` to `Tool.parameter`
+  # and `Chat#with_tool` to `Chat#with_tools`.
+  gem "ruby_llm", "~> 2.0"
   gem "opentelemetry-api"
   gem "opentelemetry-sdk"
   gem "opentelemetry-instrumentation-ruby_llm", path: "../"
@@ -23,7 +26,7 @@ end
 
 class Calculator < RubyLLM::Tool
   description "Performs basic math calculations"
-  param :expression, type: "string", desc: "Math expression to evaluate"
+  parameter :expression, type: "string", description: "Math expression to evaluate"
 
   def execute(expression:)
     eval(expression).to_s
@@ -31,7 +34,7 @@ class Calculator < RubyLLM::Tool
 end
 
 chat = RubyLLM.chat
-chat.with_tool(Calculator)
+chat.with_tools(Calculator)
 response = chat.ask("What is 123 * 456?")
 puts "\nResponse: #{response.content}"
 
